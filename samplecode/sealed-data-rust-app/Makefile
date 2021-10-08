@@ -75,7 +75,8 @@ else
 	Urts_Library_Name := sgx_urts
 endif
 
-App_C_Files := $(filter-out ./app/Enclave_u.c, $(wildcard ./app/*.c))
+App_Rust_Flags := --release
+App_SRC_Files := $(shell find app/ -type f -name '*.rs') $(shell find app/ -type f -name 'Cargo.toml')
 App_Include_Paths := -I ./app -I./include -I$(SGX_SDK)/include -I$(CUSTOM_EDL_PATH)
 App_C_Flags := $(SGX_COMMON_CFLAGS) -fPIC -Wno-attributes $(App_Include_Paths)
 App_Link_Flags := -L$(SGX_LIBRARY_PATH) -L$(CUSTOM_LIBRARY_PATH) -l$(Urts_Library_Name) -lpthread
@@ -84,11 +85,12 @@ ifneq ($(SGX_MODE), HW)
 else
 	App_Link_Flags += -lsgx_uae_service
 endif
-
 App_Link_Flags += -lsgx_ustdc
+App_Link_Flags += __ImageBase=0 -Wl
 
-App_C_Objects := $(App_C_Files:.c=.o)
 
+App_Rust_Path := ./app/target/release
+App_Enclave_u_Object :=lib/libEnclave_u.a
 App_Name := bin/app
 
 ######## Enclave Settings ########
@@ -112,9 +114,12 @@ RustEnclave_Link_Libs := -L$(CUSTOM_LIBRARY_PATH) -lenclave
 RustEnclave_Compile_Flags := $(SGX_COMMON_CFLAGS) $(ENCLAVE_CFLAGS) $(RustEnclave_Include_Paths)
 RustEnclave_Link_Flags := -Wl,--no-undefined -nostdlib -nodefaultlibs -nostartfiles -L$(SGX_LIBRARY_PATH) \
 	-Wl,--whole-archive -l$(Trts_Library_Name) -Wl,--no-whole-archive \
-	-Wl,--start-group -lsgx_tstdc -l$(Crypto_Library_Name) -l$(Service_Library_Name) $(RustEnclave_Link_Libs) -Wl,--end-group \
+	-Wl, --start-group -lsgx_tstdc -l$(Service_Library_Name) -l$(Crypto_Library_Name) $(RustEnclave_Link_Libs) -Wl,--end-group \
 	-Wl,--version-script=enclave/Enclave.lds \
-	$(ENCLAVE_LDFLAGS)
+	$(ENCLAVE_LDFLAGS) 
+
+
+
 
 RustEnclave_Name := enclave/enclave.so
 Signed_RustEnclave_Name := bin/enclave.signed.so
@@ -131,24 +136,23 @@ $(Enclave_EDL_Files): $(SGX_EDGER8R) enclave/Enclave.edl
 
 ######## App Objects ########
 
-app/Enclave_u.o: app/Enclave_u.c
-	@$(CC) $(App_C_Flags) -c $< -o $@
+app/Enclave_u.o: $(Enclave_EDL_Files)
+	@$(CC) $(App_C_Flags) -c app/Enclave_u.c -o $@
 	@echo "CC   <=  $<"
 
-app/%.o: app/%.c
-	@$(CXX) $(App_C_Flags) -c $< -o $@
-	@echo "CXX  <=  $<"
+$(App_Enclave_u_Object): app/Enclave_u.o
+	$(AR) rcsD $@ $^
 
-$(App_Name): app/Enclave_u.o $(App_C_Objects) sgx_ustdc
-	cp ../../sgx_ustdc/libsgx_ustdc.a ./lib
+$(App_Name): $(App_Enclave_u_Object) $(App_SRC_Files)
+	@cd app && SGX_SDK=$(SGX_SDK) cargo build $(App_Rust_Flags)
+	@echo "Cargo  =>  $@"
 	mkdir -p bin
-	@$(CXX) app/Enclave_u.o $(App_C_Objects) -o $@ $(App_Link_Flags)
-	@echo "LINK =>  $@"
+	cp $(App_Rust_Path)/app ./bin
 
 ######## Enclave Objects ########
 
-enclave/Enclave_t.o: enclave/Enclave_t.c
-	@$(CC) $(RustEnclave_Compile_Flags) -c $< -o $@
+enclave/Enclave_t.o: $(Enclave_EDL_Files)
+	@$(CC) $(RustEnclave_Compile_Flags) -c enclave/Enclave_t.c -o $@
 	@echo "CC   <=  $<"
 
 $(RustEnclave_Name): enclave enclave/Enclave_t.o
@@ -164,12 +168,12 @@ $(Signed_RustEnclave_Name): $(RustEnclave_Name)
 enclave:
 	$(MAKE) -C ./enclave/
 
-
 .PHONY: sgx_ustdc
 sgx_ustdc:
 	$(MAKE) -C ../../sgx_ustdc/ 2> /dev/null
-
+	
 .PHONY: clean
 clean:
-	@rm -f $(App_Name) $(RustEnclave_Name) $(Signed_RustEnclave_Name) $(RustEnclave_C_Objects) $(App_C_Objects) enclave/*_t.* app/*_u.* lib/*.a
+	@rm -f $(App_Name) $(RustEnclave_Name) $(Signed_RustEnclave_Name) enclave/*_t.* app/*_u.* lib/*.a
 	@cd enclave && cargo clean && rm -f Cargo.lock
+	@cd app && cargo clean && rm -f Cargo.lock

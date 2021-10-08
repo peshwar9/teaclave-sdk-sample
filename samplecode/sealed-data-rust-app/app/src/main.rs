@@ -1,13 +1,18 @@
 extern crate sgx_types;
 extern crate sgx_urts;
+extern crate sgx_tseal;
 
-use sgx_types::*;
 use sgx_urts::SgxEnclave;
+use sgx_types::*;
+//use sgx_types::{sgx_enclave_id_t, SgxResult, sgx_launch_token_t, sgx_status_t, sgx_sealed_data_t, sgx_misc_attribute_t, sgx_attributes_t};
+use sgx_tseal::SgxSealedData;
 
 static ENCLAVE_FILE: &'static str  = "enclave.signed.so";
 
 extern {
-    fn say_hello(eid: sgx_enclave_id_t, retval: *mut sgx_status_t, text: *const u8, length: usize) -> sgx_status_t;
+    fn create_sealeddata_for_fixed(eid: sgx_enclave_id_t, retval: *mut sgx_status_t, sealed_log: * mut u8, sealed_log_size: u32) -> sgx_status_t;
+    fn verify_sealeddata_for_fixed(eid: sgx_enclave_id_t, retval: *mut sgx_status_t, sealed_log: * mut u8, sealed_log_size: u32) -> sgx_status_t; 
+
 }
 
 // Function to initialize enclave
@@ -34,14 +39,19 @@ fn main() {
     };
 
     // Create string to pass to enclave
+ //   uint32_t sealed_log_size = 1024;
+ //   uint8_t sealed_log[1024] = {0};
 
-    let input_string = String::from("This is the normal string passed into Ternoa enclave\n");
+    let sealed_log = String::from("This is the normal string passed into Ternoa enclave\n");
+    let sealed_log: [u8;1024] = [0_u8;1024];
+    let sealed_log_size = 1024_u32;
+
     let mut retval = sgx_status_t::SGX_SUCCESS;
 
     // Call the enclave function
 
     let result = unsafe {
-        say_hello(enclave.geteid(), &mut retval, input_string.as_ptr() as * const u8, input_string.len())
+        create_sealeddata_for_fixed(enclave.geteid(), &mut retval, sealed_log.as_ptr() as *mut u8, sealed_log_size)
     };
 
     match result {

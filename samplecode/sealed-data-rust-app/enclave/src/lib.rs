@@ -1,4 +1,4 @@
-#![crate_name = "sealdatasssenclave"]
+#![crate_name = "sealeddata"]
 #![crate_type = "staticlib"]
 
 #![cfg_attr(not(target_env = "sgx"), no_std)]
@@ -9,12 +9,13 @@ extern crate sgx_tseal;
 #[cfg(not(target_env = "sgx"))]
 #[macro_use]
 extern crate sgx_tstd as std;
-extern crate sgx_rand;
+
 
 
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_cbor;
+extern crate sgx_rand;
 
 
 use sgx_types::{sgx_status_t, sgx_sealed_data_t};
